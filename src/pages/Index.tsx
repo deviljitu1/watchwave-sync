@@ -1,61 +1,52 @@
-import { Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/hooks/useAuth';
-import { Users, Plus, LogOut, Loader2 } from 'lucide-react';
-import { toast } from '@/hooks/use-toast';
+import { Video, Plus, LogIn, LogOut, User } from 'lucide-react';
 
 const Index = () => {
-  const { user, profile, loading, signOut } = useAuth();
+  const { user, loading, signOut } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      navigate('/auth');
+    }
+  }, [user, loading, navigate]);
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
       </div>
     );
   }
 
   if (!user) {
-    return <Navigate to="/auth" replace />;
+    return null; // Will redirect to auth
   }
 
   const handleSignOut = async () => {
-    const { error } = await signOut();
-    if (error) {
-      toast({
-        title: "Error signing out",
-        description: error.message,
-        variant: "destructive",
-      });
-    } else {
-      toast({
-        title: "Signed out",
-        description: "You've been signed out successfully.",
-      });
-    }
+    await signOut();
   };
 
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b bg-card">
+      <header className="border-b">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <Users className="h-8 w-8 text-primary" />
-            <h1 className="text-2xl font-bold">Watch Together</h1>
+            <Video className="h-6 w-6 text-primary" />
+            <h1 className="text-xl font-bold">Watch Together</h1>
           </div>
           <div className="flex items-center space-x-4">
-            <div className="text-sm">
-              <span className="text-muted-foreground">Welcome back, </span>
-              <span className="font-medium">
-                {profile?.display_name || profile?.username || 'User'}
-              </span>
-              {profile?.is_guest && (
-                <span className="ml-2 text-xs bg-secondary text-secondary-foreground px-2 py-1 rounded">
-                  Guest
-                </span>
-              )}
+            <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+              <User className="h-4 w-4" />
+              <span>{user.user_metadata?.display_name || user.user_metadata?.username || 'User'}</span>
             </div>
             <Button variant="outline" size="sm" onClick={handleSignOut}>
               <LogOut className="h-4 w-4 mr-2" />
@@ -67,46 +58,44 @@ const Index = () => {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
-        <div className="max-w-4xl mx-auto space-y-8">
-          {/* Welcome Section */}
-          <div className="text-center space-y-4">
-            <h2 className="text-4xl font-bold">Ready to Watch Together?</h2>
-            <p className="text-xl text-muted-foreground">
-              Create a room to watch videos with friends or join an existing room
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-8">
+            <h2 className="text-3xl font-bold mb-2">Welcome to Watch Together</h2>
+            <p className="text-lg text-muted-foreground">
+              Create a room to watch videos with friends or join an existing one
             </p>
           </div>
 
-          {/* Action Cards */}
-          <div className="grid md:grid-cols-2 gap-6">
-            <Card className="cursor-pointer hover:shadow-lg transition-shadow">
-              <CardHeader>
-                <div className="flex items-center space-x-2">
-                  <Plus className="h-6 w-6 text-primary" />
-                  <CardTitle>Create Room</CardTitle>
-                </div>
+          <div className="grid md:grid-cols-2 gap-6 max-w-2xl mx-auto">
+            <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+              <CardHeader className="text-center">
+                <CardTitle className="flex items-center justify-center space-x-2">
+                  <Plus className="h-5 w-5" />
+                  <span>Create Room</span>
+                </CardTitle>
                 <CardDescription>
-                  Start a new watch party and invite your friends to join
+                  Start a new watch party and invite your friends
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Button className="w-full">
+                <Button className="w-full" size="lg">
                   Create New Room
                 </Button>
               </CardContent>
             </Card>
 
-            <Card className="cursor-pointer hover:shadow-lg transition-shadow">
-              <CardHeader>
-                <div className="flex items-center space-x-2">
-                  <Users className="h-6 w-6 text-primary" />
-                  <CardTitle>Join Room</CardTitle>
-                </div>
+            <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+              <CardHeader className="text-center">
+                <CardTitle className="flex items-center justify-center space-x-2">
+                  <LogIn className="h-5 w-5" />
+                  <span>Join Room</span>
+                </CardTitle>
                 <CardDescription>
-                  Enter a room code or use an invite link to join a watch party
+                  Enter a room code to join an existing watch party
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Button variant="secondary" className="w-full">
+                <Button variant="outline" className="w-full" size="lg">
                   Join Existing Room
                 </Button>
               </CardContent>
@@ -114,34 +103,34 @@ const Index = () => {
           </div>
 
           {/* Features Section */}
-          <div className="mt-12">
+          <div className="mt-16">
             <h3 className="text-2xl font-bold text-center mb-8">Features</h3>
             <div className="grid md:grid-cols-3 gap-6">
-              <div className="text-center space-y-2">
-                <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
-                  <Users className="h-6 w-6 text-primary" />
+              <div className="text-center">
+                <div className="bg-primary/10 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-4">
+                  <Video className="h-6 w-6 text-primary" />
                 </div>
-                <h4 className="font-semibold">Synchronized Playback</h4>
+                <h4 className="font-semibold mb-2">Synchronized Playback</h4>
                 <p className="text-sm text-muted-foreground">
                   Watch videos in perfect sync with your friends
                 </p>
               </div>
-              <div className="text-center space-y-2">
-                <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
-                  <Users className="h-6 w-6 text-primary" />
+              <div className="text-center">
+                <div className="bg-primary/10 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-4">
+                  <User className="h-6 w-6 text-primary" />
                 </div>
-                <h4 className="font-semibold">Real-time Chat</h4>
+                <h4 className="font-semibold mb-2">Real-time Chat</h4>
                 <p className="text-sm text-muted-foreground">
                   Chat with friends while watching together
                 </p>
               </div>
-              <div className="text-center space-y-2">
-                <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
-                  <Users className="h-6 w-6 text-primary" />
+              <div className="text-center">
+                <div className="bg-primary/10 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-4">
+                  <Plus className="h-6 w-6 text-primary" />
                 </div>
-                <h4 className="font-semibold">Easy Sharing</h4>
+                <h4 className="font-semibold mb-2">Easy Room Creation</h4>
                 <p className="text-sm text-muted-foreground">
-                  Share room links instantly with friends
+                  Create and share rooms with a simple link
                 </p>
               </div>
             </div>
