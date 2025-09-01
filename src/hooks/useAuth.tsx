@@ -90,14 +90,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInAsGuest = async (username: string) => {
-    // Generate a random email and password for guest users
-    const guestEmail = `guest_${Math.random().toString(36).substring(2)}@watch-together.local`;
+    // Generate a valid email and password for guest users
+    const randomId = Math.random().toString(36).substring(2);
+    const guestEmail = `guest.${randomId}@example.com`;
     const guestPassword = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
     
     const { error } = await supabase.auth.signUp({
       email: guestEmail,
       password: guestPassword,
       options: {
+        emailRedirectTo: `${window.location.origin}/`,
         data: {
           username,
           display_name: username,
@@ -111,6 +113,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         title: "Guest Login Error",
         description: error.message,
         variant: "destructive"
+      });
+    } else {
+      toast({
+        title: "Welcome!",
+        description: `Signed in as guest: ${username}`
       });
     }
 
