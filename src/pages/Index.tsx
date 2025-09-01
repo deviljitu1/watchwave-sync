@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/hooks/useAuth';
+import { CreateRoomDialog } from '@/components/rooms/CreateRoomDialog';
+import { JoinRoomDialog } from '@/components/rooms/JoinRoomDialog';
 import { Video, Plus, LogIn, LogOut, User } from 'lucide-react';
 
 const Index = () => {
@@ -67,7 +69,7 @@ const Index = () => {
           </div>
 
           <div className="grid md:grid-cols-2 gap-6 max-w-2xl mx-auto">
-            <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+            <Card className="hover:shadow-lg transition-shadow">
               <CardHeader className="text-center">
                 <CardTitle className="flex items-center justify-center space-x-2">
                   <Plus className="h-5 w-5" />
@@ -78,13 +80,11 @@ const Index = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Button className="w-full" size="lg">
-                  Create New Room
-                </Button>
+                <CreateRoomDialog />
               </CardContent>
             </Card>
 
-            <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+            <Card className="hover:shadow-lg transition-shadow">
               <CardHeader className="text-center">
                 <CardTitle className="flex items-center justify-center space-x-2">
                   <LogIn className="h-5 w-5" />
@@ -95,9 +95,7 @@ const Index = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Button variant="outline" className="w-full" size="lg">
-                  Join Existing Room
-                </Button>
+                <JoinRoomDialog />
               </CardContent>
             </Card>
           </div>
