@@ -47,12 +47,92 @@ export type Database = {
         }
         Relationships: []
       }
+      room_participants: {
+        Row: {
+          id: string
+          is_host: boolean | null
+          joined_at: string
+          room_id: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          is_host?: boolean | null
+          joined_at?: string
+          room_id: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          is_host?: boolean | null
+          joined_at?: string
+          room_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "room_participants_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rooms: {
+        Row: {
+          created_at: string
+          current_video_time: number | null
+          current_video_url: string | null
+          description: string | null
+          host_user_id: string
+          id: string
+          is_active: boolean | null
+          is_playing: boolean | null
+          max_participants: number | null
+          name: string
+          room_code: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          current_video_time?: number | null
+          current_video_url?: string | null
+          description?: string | null
+          host_user_id: string
+          id?: string
+          is_active?: boolean | null
+          is_playing?: boolean | null
+          max_participants?: number | null
+          name: string
+          room_code: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          current_video_time?: number | null
+          current_video_url?: string | null
+          description?: string | null
+          host_user_id?: string
+          id?: string
+          is_active?: boolean | null
+          is_playing?: boolean | null
+          max_participants?: number | null
+          name?: string
+          room_code?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      generate_room_code: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never
