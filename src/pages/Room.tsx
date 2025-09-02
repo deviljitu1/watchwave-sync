@@ -1,13 +1,27 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
-import { Video, Users, Copy, LogOut, Settings, Loader2 } from 'lucide-react';
+import { Video, Users, Copy, LogOut, Settings, Loader2, Play, Pause, SkipForward, SkipBack } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
+
+// YouTube API type declarations
+declare global {
+  interface Window {
+    YT: {
+      Player: any;
+      PlayerState: {
+        PLAYING: number;
+        PAUSED: number;
+      };
+    };
+    onYouTubeIframeAPIReady: () => void;
+  }
+}
 
 interface Room {
   id: string;
@@ -48,32 +62,190 @@ const Room = () => {
   const [isHost, setIsHost] = useState(false);
 
   const [newVideoUrl, setNewVideoUrl] = useState('');
+  const [player, setPlayer] = useState<any>(null);
+  const [isYouTubeReady, setIsYouTubeReady] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const playerRef = useRef<any>(null);
 
-  const toEmbedUrl = (url: string) => {
+  const extractYouTubeVideoId = (url: string): string | null => {
     try {
       const u = new URL(url);
       // youtu.be/<id>
       if (u.hostname.includes('youtu.be')) {
-        const id = u.pathname.replace('/', '');
-        return `https://www.youtube.com/embed/${id}`;
+        return u.pathname.replace('/', '');
       }
       // youtube.com/watch?v=<id>
       if (u.hostname.includes('youtube.com')) {
-        const v = u.searchParams.get('v');
-        if (v) return `https://www.youtube.com/embed/${v}`;
-        // already /embed/<id>
-        if (u.pathname.startsWith('/embed/')) return url;
+        return u.searchParams.get('v');
       }
-      return url;
+      // youtube.com/embed/<id>
+      if (u.pathname.includes('/embed/')) {
+        return u.pathname.split('/embed/')[1];
+      }
     } catch {
-      return url;
+      return null;
+    }
+    return null;
+  };
+
+  // Load YouTube API
+  useEffect(() => {
+    if (!window.YT) {
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+      
+      (window as any).onYouTubeIframeAPIReady = () => {
+        setIsYouTubeReady(true);
+      };
+    } else {
+      setIsYouTubeReady(true);
+    }
+  }, []);
+
+  // Initialize YouTube player when video URL changes
+  useEffect(() => {
+    if (!isYouTubeReady || !room?.current_video_url) return;
+    
+    const videoId = extractYouTubeVideoId(room.current_video_url);
+    if (!videoId) return;
+
+    if (playerRef.current) {
+      playerRef.current.destroy();
+    }
+
+    playerRef.current = new window.YT.Player('youtube-player', {
+      height: '100%',
+      width: '100%',
+      videoId: videoId,
+      playerVars: {
+        controls: 0,
+        disablekb: 1,
+        modestbranding: 1,
+        rel: 0,
+        showinfo: 0,
+        fs: 1,
+      },
+      events: {
+        onReady: (event: any) => {
+          setPlayer(event.target);
+          // Sync to current room state
+          if (room.current_video_time > 0) {
+            event.target.seekTo(room.current_video_time, true);
+          }
+          if (room.is_playing) {
+            event.target.playVideo();
+          } else {
+            event.target.pauseVideo();
+          }
+        },
+        onStateChange: (event: any) => {
+          // Only sync if this user initiated the change (not syncing from another user)
+          if (!isSyncing && player) {
+            handleVideoStateChange(event);
+          }
+        }
+      }
+    });
+  }, [isYouTubeReady, room?.current_video_url]);
+
+  const handleVideoStateChange = useCallback(async (event: any) => {
+    if (!room || !player || isSyncing) return;
+    
+    const currentTime = Math.floor(player.getCurrentTime());
+    const isPlaying = event.data === window.YT.PlayerState.PLAYING;
+    
+    try {
+      const { error } = await supabase
+        .from('rooms')
+        .update({
+          is_playing: isPlaying,
+          current_video_time: currentTime
+        })
+        .eq('id', room.id);
+        
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error syncing video state:', error);
+    }
+  }, [room, player, isSyncing]);
+
+  const syncVideoState = useCallback((newRoom: Room) => {
+    if (!player || !newRoom.current_video_url) return;
+    
+    setIsSyncing(true);
+    
+    const currentTime = Math.floor(player.getCurrentTime());
+    const timeDiff = Math.abs(currentTime - newRoom.current_video_time);
+    
+    // Only seek if time difference is significant (>2 seconds)
+    if (timeDiff > 2) {
+      player.seekTo(newRoom.current_video_time, true);
+    }
+    
+    // Sync play/pause state
+    if (newRoom.is_playing) {
+      player.playVideo();
+    } else {
+      player.pauseVideo();
+    }
+    
+    setTimeout(() => setIsSyncing(false), 1000);
+  }, [player]);
+
+  const handlePlayPause = async () => {
+    if (!room || !player) return;
+    
+    const currentTime = Math.floor(player.getCurrentTime());
+    const newPlayingState = !room.is_playing;
+    
+    try {
+      const { error } = await supabase
+        .from('rooms')
+        .update({
+          is_playing: newPlayingState,
+          current_video_time: currentTime
+        })
+        .eq('id', room.id);
+        
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error updating play state:', error);
+    }
+  };
+
+  const handleSeek = async (seconds: number) => {
+    if (!room || !player) return;
+    
+    const currentTime = Math.floor(player.getCurrentTime());
+    const newTime = Math.max(0, currentTime + seconds);
+    
+    try {
+      const { error } = await supabase
+        .from('rooms')
+        .update({
+          current_video_time: newTime
+        })
+        .eq('id', room.id);
+        
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error seeking video:', error);
     }
   };
 
   const handleLoadVideo = async () => {
-    if (!room || !isHost) return;
+    if (!room) return;
     const url = newVideoUrl.trim();
     if (!url) return;
+    
+    const videoId = extractYouTubeVideoId(url);
+    if (!videoId) {
+      toast({ title: 'Invalid YouTube URL', description: 'Please enter a valid YouTube link.', variant: 'destructive' });
+      return;
+    }
+    
     try {
       const { error } = await supabase
         .from('rooms')
@@ -187,7 +359,10 @@ const Room = () => {
         },
         (payload) => {
           if (payload.eventType === 'UPDATE') {
-            setRoom(payload.new as Room);
+            const newRoom = payload.new as Room;
+            setRoom(newRoom);
+            // Sync video state when room is updated
+            syncVideoState(newRoom);
           } else if (payload.eventType === 'DELETE') {
             toast({
               title: "Room closed",
@@ -341,15 +516,58 @@ const Room = () => {
           {/* Video Player Area */}
           <div className="lg:col-span-3">
             {room.current_video_url ? (
-              <div className="aspect-video w-full overflow-hidden rounded-lg bg-black">
-                <iframe
-                  key={room.current_video_url}
-                  className="w-full h-full"
-                  src={toEmbedUrl(room.current_video_url)}
-                  title="Shared video player"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                  allowFullScreen
-                />
+              <div className="space-y-4">
+                <div className="aspect-video w-full overflow-hidden rounded-lg bg-black relative">
+                  <div id="youtube-player" className="w-full h-full"></div>
+                </div>
+                
+                {/* Video Controls */}
+                <div className="flex items-center justify-center space-x-4 p-4 bg-card rounded-lg">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => handleSeek(-10)}
+                    disabled={!player}
+                  >
+                    <SkipBack className="h-4 w-4" />
+                    10s
+                  </Button>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handlePlayPause}
+                    disabled={!player}
+                  >
+                    {room.is_playing ? (
+                      <Pause className="h-4 w-4" />
+                    ) : (
+                      <Play className="h-4 w-4" />
+                    )}
+                  </Button>
+                  
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => handleSeek(10)}
+                    disabled={!player}
+                  >
+                    <SkipForward className="h-4 w-4" />
+                    10s
+                  </Button>
+                </div>
+                
+                {/* Video URL Input */}
+                <Card className="p-4">
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Input
+                      placeholder="https://www.youtube.com/watch?v=..."
+                      value={newVideoUrl}
+                      onChange={(e) => setNewVideoUrl(e.target.value)}
+                    />
+                    <Button onClick={handleLoadVideo}>Load Video</Button>
+                  </div>
+                </Card>
               </div>
             ) : (
               <Card className="p-6">
@@ -357,18 +575,16 @@ const Room = () => {
                   <Video className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
                   <h3 className="text-lg font-semibold mb-2">No video playing</h3>
                   <p className="text-muted-foreground mb-4">
-                    {isHost ? 'Paste a YouTube link to start watching together' : 'Waiting for the host to start a video'}
+                    Paste a YouTube link to start watching together
                   </p>
-                  {isHost && (
-                    <div className="flex flex-col sm:flex-row gap-2 max-w-2xl mx-auto">
-                      <Input
-                        placeholder="https://www.youtube.com/watch?v=..."
-                        value={newVideoUrl}
-                        onChange={(e) => setNewVideoUrl(e.target.value)}
-                      />
-                      <Button onClick={handleLoadVideo}>Load Video</Button>
-                    </div>
-                  )}
+                  <div className="flex flex-col sm:flex-row gap-2 max-w-2xl mx-auto">
+                    <Input
+                      placeholder="https://www.youtube.com/watch?v=..."
+                      value={newVideoUrl}
+                      onChange={(e) => setNewVideoUrl(e.target.value)}
+                    />
+                    <Button onClick={handleLoadVideo}>Load Video</Button>
+                  </div>
                 </div>
               </Card>
             )}
