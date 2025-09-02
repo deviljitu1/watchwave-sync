@@ -129,20 +129,24 @@ const Room = () => {
       },
       events: {
         onReady: (event: any) => {
+          console.log('YouTube player ready');
           setPlayer(event.target);
           // Sync to current room state
-          if (room.current_video_time > 0) {
-            event.target.seekTo(room.current_video_time, true);
-          }
-          if (room.is_playing) {
-            event.target.playVideo();
-          } else {
-            event.target.pauseVideo();
-          }
+          setTimeout(() => {
+            if (room.current_video_time > 0) {
+              event.target.seekTo(room.current_video_time, true);
+            }
+            if (room.is_playing) {
+              event.target.playVideo();
+            } else {
+              event.target.pauseVideo();
+            }
+          }, 500);
         },
         onStateChange: (event: any) => {
+          console.log('Player state change:', event.data);
           // Only sync if this user initiated the change (not syncing from another user)
-          if (!isSyncing && player) {
+          if (!isSyncing && event.target) {
             handleVideoStateChange(event);
           }
         }
@@ -151,17 +155,24 @@ const Room = () => {
   }, [isYouTubeReady, room?.current_video_url]);
 
   const handleVideoStateChange = useCallback(async (event: any) => {
-    if (!room || !player || isSyncing) return;
+    if (!room || !event.target || isSyncing) return;
     
-    const currentTime = Math.floor(player.getCurrentTime());
+    const currentTime = Math.floor(event.target.getCurrentTime());
     const isPlaying = event.data === window.YT.PlayerState.PLAYING;
+    const isPaused = event.data === window.YT.PlayerState.PAUSED;
+    
+    // Only sync for play/pause events
+    if (!isPlaying && !isPaused) return;
+    
+    console.log('Syncing video state:', { isPlaying, currentTime });
     
     try {
       const { error } = await supabase
         .from('rooms')
         .update({
           is_playing: isPlaying,
-          current_video_time: currentTime
+          current_video_time: currentTime,
+          updated_at: new Date().toISOString()
         })
         .eq('id', room.id);
         
@@ -169,29 +180,37 @@ const Room = () => {
     } catch (error) {
       console.error('Error syncing video state:', error);
     }
-  }, [room, player, isSyncing]);
+  }, [room, isSyncing]);
 
   const syncVideoState = useCallback((newRoom: Room) => {
     if (!player || !newRoom.current_video_url) return;
+    
+    console.log('Syncing to room state:', { 
+      isPlaying: newRoom.is_playing, 
+      time: newRoom.current_video_time 
+    });
     
     setIsSyncing(true);
     
     const currentTime = Math.floor(player.getCurrentTime());
     const timeDiff = Math.abs(currentTime - newRoom.current_video_time);
     
-    // Only seek if time difference is significant (>2 seconds)
-    if (timeDiff > 2) {
+    // Only seek if time difference is significant (>3 seconds)
+    if (timeDiff > 3) {
+      console.log('Seeking to:', newRoom.current_video_time);
       player.seekTo(newRoom.current_video_time, true);
     }
     
     // Sync play/pause state
-    if (newRoom.is_playing) {
+    if (newRoom.is_playing && player.getPlayerState() !== window.YT.PlayerState.PLAYING) {
+      console.log('Starting video playback');
       player.playVideo();
-    } else {
+    } else if (!newRoom.is_playing && player.getPlayerState() === window.YT.PlayerState.PLAYING) {
+      console.log('Pausing video playback');
       player.pauseVideo();
     }
     
-    setTimeout(() => setIsSyncing(false), 1000);
+    setTimeout(() => setIsSyncing(false), 1500);
   }, [player]);
 
   const handlePlayPause = async () => {
@@ -358,11 +377,22 @@ const Room = () => {
           filter: `room_code=eq.${roomCode.toUpperCase()}`
         },
         (payload) => {
+          console.log('Room update received:', payload);
           if (payload.eventType === 'UPDATE') {
             const newRoom = payload.new as Room;
+            const oldRoom = payload.old as Room;
+            
+            // Only sync if there's an actual change in video state
+            const hasVideoStateChange = 
+              newRoom.is_playing !== oldRoom.is_playing ||
+              Math.abs(newRoom.current_video_time - oldRoom.current_video_time) > 1 ||
+              newRoom.current_video_url !== oldRoom.current_video_url;
+            
             setRoom(newRoom);
-            // Sync video state when room is updated
-            syncVideoState(newRoom);
+            
+            if (hasVideoStateChange && player) {
+              syncVideoState(newRoom);
+            }
           } else if (payload.eventType === 'DELETE') {
             toast({
               title: "Room closed",
