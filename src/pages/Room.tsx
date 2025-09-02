@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { Video, Users, Copy, LogOut, Settings, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { Input } from '@/components/ui/input';
 
 interface Room {
   id: string;
@@ -45,6 +46,47 @@ const Room = () => {
   const [loading, setLoading] = useState(true);
   const [isParticipant, setIsParticipant] = useState(false);
   const [isHost, setIsHost] = useState(false);
+
+  const [newVideoUrl, setNewVideoUrl] = useState('');
+
+  const toEmbedUrl = (url: string) => {
+    try {
+      const u = new URL(url);
+      // youtu.be/<id>
+      if (u.hostname.includes('youtu.be')) {
+        const id = u.pathname.replace('/', '');
+        return `https://www.youtube.com/embed/${id}`;
+      }
+      // youtube.com/watch?v=<id>
+      if (u.hostname.includes('youtube.com')) {
+        const v = u.searchParams.get('v');
+        if (v) return `https://www.youtube.com/embed/${v}`;
+        // already /embed/<id>
+        if (u.pathname.startsWith('/embed/')) return url;
+      }
+      return url;
+    } catch {
+      return url;
+    }
+  };
+
+  const handleLoadVideo = async () => {
+    if (!room || !isHost) return;
+    const url = newVideoUrl.trim();
+    if (!url) return;
+    try {
+      const { error } = await supabase
+        .from('rooms')
+        .update({ current_video_url: url, is_playing: false, current_video_time: 0 })
+        .eq('id', room.id);
+      if (error) throw error;
+      setRoom({ ...room, current_video_url: url, is_playing: false, current_video_time: 0 });
+      toast({ title: 'Video loaded', description: 'Shared with the room.' });
+      setNewVideoUrl('');
+    } catch (e: any) {
+      toast({ title: 'Failed to load video', description: e.message, variant: 'destructive' });
+    }
+  };
 
   useEffect(() => {
     if (!user || !roomCode) {
@@ -298,20 +340,38 @@ const Room = () => {
         <div className="grid lg:grid-cols-4 gap-8">
           {/* Video Player Area */}
           <div className="lg:col-span-3">
-            <Card className="aspect-video bg-muted flex items-center justify-center">
-              <div className="text-center">
-                <Video className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-lg font-semibold mb-2">No video playing</h3>
-                <p className="text-muted-foreground">
-                  {isHost ? 'Add a video URL to start watching together' : 'Waiting for the host to start a video'}
-                </p>
-                {isHost && (
-                  <Button className="mt-4">
-                    Add Video URL
-                  </Button>
-                )}
+            {room.current_video_url ? (
+              <div className="aspect-video w-full overflow-hidden rounded-lg bg-black">
+                <iframe
+                  key={room.current_video_url}
+                  className="w-full h-full"
+                  src={toEmbedUrl(room.current_video_url)}
+                  title="Shared video player"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                />
               </div>
-            </Card>
+            ) : (
+              <Card className="p-6">
+                <div className="text-center">
+                  <Video className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
+                  <h3 className="text-lg font-semibold mb-2">No video playing</h3>
+                  <p className="text-muted-foreground mb-4">
+                    {isHost ? 'Paste a YouTube link to start watching together' : 'Waiting for the host to start a video'}
+                  </p>
+                  {isHost && (
+                    <div className="flex flex-col sm:flex-row gap-2 max-w-2xl mx-auto">
+                      <Input
+                        placeholder="https://www.youtube.com/watch?v=..."
+                        value={newVideoUrl}
+                        onChange={(e) => setNewVideoUrl(e.target.value)}
+                      />
+                      <Button onClick={handleLoadVideo}>Load Video</Button>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            )}
             
             {room.description && (
               <Card className="mt-4">

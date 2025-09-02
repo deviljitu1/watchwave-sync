@@ -90,23 +90,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInAsGuest = async (username: string) => {
-    // Generate a valid email and password for guest users
-    const randomId = Math.random().toString(36).substring(2);
-    const guestEmail = `guest.${randomId}@example.com`;
-    const guestPassword = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
-    
-    const { error } = await supabase.auth.signUp({
-      email: guestEmail,
-      password: guestPassword,
-      options: {
-        emailRedirectTo: `${window.location.origin}/`,
-        data: {
-          username,
-          display_name: username,
-          is_guest: true
-        }
-      }
-    });
+    // Use Supabase Anonymous Sign-In to avoid email verification
+    const { data, error } = await supabase.auth.signInAnonymously();
 
     if (error) {
       toast({
@@ -114,14 +99,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         description: error.message,
         variant: "destructive"
       });
-    } else {
-      toast({
-        title: "Welcome!",
-        description: `Signed in as guest: ${username}`
-      });
+      return { error };
     }
 
-    return { error };
+    // Ensure a profile exists for this guest user
+    const uid = data.user?.id;
+    if (uid) {
+      try {
+        const { data: existing } = await supabase
+          .from('profiles')
+          .select('user_id')
+          .eq('user_id', uid)
+          .maybeSingle();
+
+        if (!existing) {
+          await supabase.from('profiles').insert({
+            user_id: uid,
+            display_name: username,
+            username,
+            is_guest: true,
+          });
+        } else {
+          // Best-effort update display name if empty
+          await supabase
+            .from('profiles')
+            .update({ display_name: username, username, is_guest: true })
+            .eq('user_id', uid);
+        }
+      } catch (e: any) {
+        // Non-fatal: proceed even if profile write fails
+        console.warn('Profile setup failed:', e?.message || e);
+      }
+    }
+
+    toast({
+      title: "Welcome!",
+      description: `Signed in as guest: ${username}`,
+    });
+
+    return { error: null };
   };
 
   const signOut = async () => {
