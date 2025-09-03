@@ -132,6 +132,7 @@ const Room = () => {
         rel: 0,
         showinfo: 0,
         fs: 1,
+        enablejsapi: 1,
       },
       events: {
         onReady: (event: any) => {
@@ -151,16 +152,19 @@ const Room = () => {
         },
         onStateChange: (event: any) => {
           console.log('Player state change:', event.data);
-          // Update current time
+          // Update current time and duration
           if (event.target && typeof event.target.getCurrentTime === 'function') {
             setCurrentTime(Math.floor(event.target.getCurrentTime()));
           }
           if (event.target && typeof event.target.getDuration === 'function') {
             setDuration(Math.floor(event.target.getDuration()));
           }
-          // Only sync if this user initiated the change (not syncing from another user)
+          // Only handle user-initiated changes, not programmatic ones
           if (!isSyncing && event.target) {
-            handleVideoStateChange(event);
+            const isUserInitiated = Date.now() - ((window as any).lastProgrammaticChange || 0) > 1000;
+            if (isUserInitiated) {
+              handleVideoStateChange(event);
+            }
           }
         }
       }
@@ -201,8 +205,8 @@ const Room = () => {
   const syncVideoState = useCallback((newRoom: Room) => {
     if (!player || !newRoom.current_video_url || isSyncing) return;
     
-    // Mark sync time to prevent feedback loops
-    (window as any).lastSyncTime = Date.now();
+    // Mark as programmatic change
+    (window as any).lastProgrammaticChange = Date.now();
     
     console.log('Syncing to room state:', { 
       isPlaying: newRoom.is_playing, 
@@ -232,18 +236,22 @@ const Room = () => {
     
     setTimeout(() => {
       setIsSyncing(false);
+      (window as any).lastProgrammaticChange = Date.now();
     }, 2000);
   }, [player, isSyncing]);
 
   const handlePlayPause = async () => {
     if (!room || !player) return;
     
+    // Mark as user-initiated action
+    (window as any).lastProgrammaticChange = Date.now() + 500; // Prevent immediate sync back
+    
     const currentTime = Math.floor(player.getCurrentTime());
     const newPlayingState = !room.is_playing;
     
     console.log('Manual play/pause clicked:', { newPlayingState, currentTime });
     
-    // Immediately update local player state
+    // Immediately update local player state for responsiveness
     if (newPlayingState) {
       player.playVideo();
     } else {
@@ -268,7 +276,7 @@ const Room = () => {
       console.log('Successfully updated room state');
     } catch (error) {
       console.error('Error updating play state:', error);
-      // Revert player state on error
+      // Revert local state on error
       if (newPlayingState) {
         player.pauseVideo();
       } else {
@@ -280,9 +288,13 @@ const Room = () => {
   const handleSeek = async (seconds: number) => {
     if (!room || !player) return;
     
+    // Mark as user-initiated action
+    (window as any).lastProgrammaticChange = Date.now() + 500;
+    
     const currentTime = Math.floor(player.getCurrentTime());
     const newTime = Math.max(0, currentTime + seconds);
     
+    // Immediately seek for responsiveness
     player.seekTo(newTime, true);
     
     try {
@@ -321,7 +333,12 @@ const Room = () => {
   const handleProgressSeek = async (percentage: number) => {
     if (!room || !player || !duration) return;
     
+    // Mark as user-initiated action
+    (window as any).lastProgrammaticChange = Date.now() + 500;
+    
     const newTime = Math.floor((percentage / 100) * duration);
+    
+    // Immediately seek for responsiveness
     player.seekTo(newTime, true);
     
     try {
