@@ -5,9 +5,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
-import { Video, Users, Copy, LogOut, Settings, Loader2, Play, Pause, SkipForward, SkipBack } from 'lucide-react';
+import { Video, Users, Copy, LogOut, Settings, Loader2, Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Maximize, RotateCcw, RotateCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
+import { Slider } from '@/components/ui/slider';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // YouTube API type declarations
 declare global {
@@ -66,6 +68,10 @@ const Room = () => {
   const [isYouTubeReady, setIsYouTubeReady] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const playerRef = useRef<any>(null);
+  const [playbackRate, setPlaybackRate] = useState(1);
+  const [volume, setVolume] = useState(100);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
 
   const extractYouTubeVideoId = (url: string): string | null => {
     try {
@@ -145,6 +151,13 @@ const Room = () => {
         },
         onStateChange: (event: any) => {
           console.log('Player state change:', event.data);
+          // Update current time
+          if (event.target && typeof event.target.getCurrentTime === 'function') {
+            setCurrentTime(Math.floor(event.target.getCurrentTime()));
+          }
+          if (event.target && typeof event.target.getDuration === 'function') {
+            setDuration(Math.floor(event.target.getDuration()));
+          }
           // Only sync if this user initiated the change (not syncing from another user)
           if (!isSyncing && event.target) {
             handleVideoStateChange(event);
@@ -161,10 +174,13 @@ const Room = () => {
     const isPlaying = event.data === window.YT.PlayerState.PLAYING;
     const isPaused = event.data === window.YT.PlayerState.PAUSED;
     
-    // Only sync for play/pause events
+    // Only sync for meaningful state changes
     if (!isPlaying && !isPaused) return;
     
-    console.log('Syncing video state:', { isPlaying, currentTime });
+    // Prevent feedback loops by checking if this is a user-initiated change
+    if (Date.now() - (window as any).lastSyncTime < 2000) return;
+    
+    console.log('User initiated video state change:', { isPlaying, currentTime });
     
     try {
       const { error } = await supabase
@@ -183,7 +199,10 @@ const Room = () => {
   }, [room, isSyncing]);
 
   const syncVideoState = useCallback((newRoom: Room) => {
-    if (!player || !newRoom.current_video_url) return;
+    if (!player || !newRoom.current_video_url || isSyncing) return;
+    
+    // Mark sync time to prevent feedback loops
+    (window as any).lastSyncTime = Date.now();
     
     console.log('Syncing to room state:', { 
       isPlaying: newRoom.is_playing, 
@@ -195,23 +214,26 @@ const Room = () => {
     const currentTime = Math.floor(player.getCurrentTime());
     const timeDiff = Math.abs(currentTime - newRoom.current_video_time);
     
-    // Only seek if time difference is significant (>3 seconds)
-    if (timeDiff > 3) {
+    // Always sync to exact position for better accuracy
+    if (timeDiff > 2) {
       console.log('Seeking to:', newRoom.current_video_time);
       player.seekTo(newRoom.current_video_time, true);
     }
     
-    // Sync play/pause state
-    if (newRoom.is_playing && player.getPlayerState() !== window.YT.PlayerState.PLAYING) {
+    // Sync play/pause state with more precise checks
+    const currentState = player.getPlayerState();
+    if (newRoom.is_playing && currentState !== window.YT.PlayerState.PLAYING) {
       console.log('Starting video playback');
       player.playVideo();
-    } else if (!newRoom.is_playing && player.getPlayerState() === window.YT.PlayerState.PLAYING) {
+    } else if (!newRoom.is_playing && currentState === window.YT.PlayerState.PLAYING) {
       console.log('Pausing video playback');
       player.pauseVideo();
     }
     
-    setTimeout(() => setIsSyncing(false), 1500);
-  }, [player]);
+    setTimeout(() => {
+      setIsSyncing(false);
+    }, 2000);
+  }, [player, isSyncing]);
 
   const handlePlayPause = async () => {
     if (!room || !player) return;
@@ -240,11 +262,53 @@ const Room = () => {
     const currentTime = Math.floor(player.getCurrentTime());
     const newTime = Math.max(0, currentTime + seconds);
     
+    player.seekTo(newTime, true);
+    
     try {
       const { error } = await supabase
         .from('rooms')
         .update({
-          current_video_time: newTime
+          current_video_time: newTime,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', room.id);
+        
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error seeking video:', error);
+    }
+  };
+
+  const handlePlaybackRateChange = (rate: number) => {
+    if (!player) return;
+    player.setPlaybackRate(rate);
+    setPlaybackRate(rate);
+  };
+
+  const handleVolumeChange = (newVolume: number) => {
+    if (!player) return;
+    player.setVolume(newVolume);
+    setVolume(newVolume);
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleProgressSeek = async (percentage: number) => {
+    if (!room || !player || !duration) return;
+    
+    const newTime = Math.floor((percentage / 100) * duration);
+    player.seekTo(newTime, true);
+    
+    try {
+      const { error } = await supabase
+        .from('rooms')
+        .update({
+          current_video_time: newTime,
+          updated_at: new Date().toISOString()
         })
         .eq('id', room.id);
         
@@ -552,39 +616,184 @@ const Room = () => {
                 </div>
                 
                 {/* Video Controls */}
-                <div className="flex items-center justify-center space-x-4 p-4 bg-card rounded-lg">
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => handleSeek(-10)}
-                    disabled={!player}
-                  >
-                    <SkipBack className="h-4 w-4" />
-                    10s
-                  </Button>
+                <div className="bg-card rounded-lg border shadow-sm">
+                  {/* Progress Bar */}
+                  <div className="px-4 pt-4">
+                    <div className="flex items-center space-x-2 text-sm text-muted-foreground mb-2">
+                      <span>{formatTime(currentTime)}</span>
+                      <div className="flex-1">
+                        <Slider
+                          value={[duration ? (currentTime / duration) * 100 : 0]}
+                          onValueChange={(value) => handleProgressSeek(value[0])}
+                          max={100}
+                          step={0.1}
+                          className="cursor-pointer"
+                          disabled={!player || !duration}
+                        />
+                      </div>
+                      <span>{formatTime(duration)}</span>
+                    </div>
+                  </div>
                   
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handlePlayPause}
-                    disabled={!player}
-                  >
-                    {room.is_playing ? (
-                      <Pause className="h-4 w-4" />
-                    ) : (
-                      <Play className="h-4 w-4" />
-                    )}
-                  </Button>
-                  
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => handleSeek(10)}
-                    disabled={!player}
-                  >
-                    <SkipForward className="h-4 w-4" />
-                    10s
-                  </Button>
+                  {/* Main Controls */}
+                  <div className="flex items-center justify-between p-4">
+                    {/* Left Controls */}
+                    <div className="flex items-center space-x-2">
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => handleSeek(-30)}
+                        disabled={!player}
+                        className="h-8 w-8 p-0"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                      </Button>
+                      
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => handleSeek(-10)}
+                        disabled={!player}
+                        className="h-8 w-8 p-0"
+                      >
+                        <SkipBack className="h-4 w-4" />
+                      </Button>
+                      
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handlePlayPause}
+                        disabled={!player}
+                        className="h-10 w-10 p-0 bg-primary text-primary-foreground hover:bg-primary/90"
+                      >
+                        {room.is_playing ? (
+                          <Pause className="h-5 w-5" />
+                        ) : (
+                          <Play className="h-5 w-5" />
+                        )}
+                      </Button>
+                      
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => handleSeek(10)}
+                        disabled={!player}
+                        className="h-8 w-8 p-0"
+                      >
+                        <SkipForward className="h-4 w-4" />
+                      </Button>
+                      
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => handleSeek(30)}
+                        disabled={!player}
+                        className="h-8 w-8 p-0"
+                      >
+                        <RotateCw className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    {/* Center Controls */}
+                    <div className="flex items-center space-x-4">
+                      {/* Speed Control */}
+                      <div className="flex items-center space-x-2">
+                        <span className="text-sm text-muted-foreground">Speed:</span>
+                        <Select
+                          value={playbackRate.toString()}
+                          onValueChange={(value) => handlePlaybackRateChange(parseFloat(value))}
+                          disabled={!player}
+                        >
+                          <SelectTrigger className="w-20 h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="0.25">0.25x</SelectItem>
+                            <SelectItem value="0.5">0.5x</SelectItem>
+                            <SelectItem value="0.75">0.75x</SelectItem>
+                            <SelectItem value="1">1x</SelectItem>
+                            <SelectItem value="1.25">1.25x</SelectItem>
+                            <SelectItem value="1.5">1.5x</SelectItem>
+                            <SelectItem value="1.75">1.75x</SelectItem>
+                            <SelectItem value="2">2x</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    {/* Right Controls */}
+                    <div className="flex items-center space-x-2">
+                      {/* Volume Control */}
+                      <div className="flex items-center space-x-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleVolumeChange(volume === 0 ? 100 : 0)}
+                          disabled={!player}
+                          className="h-8 w-8 p-0"
+                        >
+                          {volume === 0 ? (
+                            <VolumeX className="h-4 w-4" />
+                          ) : (
+                            <Volume2 className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <div className="w-20">
+                          <Slider
+                            value={[volume]}
+                            onValueChange={(value) => handleVolumeChange(value[0])}
+                            max={100}
+                            step={1}
+                            className="cursor-pointer"
+                            disabled={!player}
+                          />
+                        </div>
+                        <span className="text-xs text-muted-foreground w-8">{volume}%</span>
+                      </div>
+
+                      {/* Quality Control */}
+                      <div className="flex items-center space-x-2">
+                        <span className="text-sm text-muted-foreground">Quality:</span>
+                        <Select
+                          defaultValue="auto"
+                          onValueChange={(quality) => {
+                            if (player && quality !== 'auto') {
+                              player.setPlaybackQuality(quality);
+                            }
+                          }}
+                          disabled={!player}
+                        >
+                          <SelectTrigger className="w-20 h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="auto">Auto</SelectItem>
+                            <SelectItem value="hd1080">1080p</SelectItem>
+                            <SelectItem value="hd720">720p</SelectItem>
+                            <SelectItem value="large">480p</SelectItem>
+                            <SelectItem value="medium">360p</SelectItem>
+                            <SelectItem value="small">240p</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Fullscreen */}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          const iframe = document.getElementById('youtube-player');
+                          if (iframe && (iframe as any).requestFullscreen) {
+                            (iframe as any).requestFullscreen();
+                          }
+                        }}
+                        disabled={!player}
+                        className="h-8 w-8 p-0"
+                      >
+                        <Maximize className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
                 </div>
                 
                 {/* Video URL Input */}
