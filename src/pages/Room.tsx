@@ -241,18 +241,39 @@ const Room = () => {
     const currentTime = Math.floor(player.getCurrentTime());
     const newPlayingState = !room.is_playing;
     
+    console.log('Manual play/pause clicked:', { newPlayingState, currentTime });
+    
+    // Immediately update local player state
+    if (newPlayingState) {
+      player.playVideo();
+    } else {
+      player.pauseVideo();
+    }
+    
     try {
       const { error } = await supabase
         .from('rooms')
         .update({
           is_playing: newPlayingState,
-          current_video_time: currentTime
+          current_video_time: currentTime,
+          updated_at: new Date().toISOString()
         })
         .eq('id', room.id);
         
-      if (error) throw error;
+      if (error) {
+        console.error('Database update error:', error);
+        throw error;
+      }
+      
+      console.log('Successfully updated room state');
     } catch (error) {
       console.error('Error updating play state:', error);
+      // Revert player state on error
+      if (newPlayingState) {
+        player.pauseVideo();
+      } else {
+        player.playVideo();
+      }
     }
   };
 
