@@ -26,17 +26,24 @@ export function CreateRoomDialog({ children }: CreateRoomDialogProps) {
     if (!name.trim()) return;
 
     setLoading(true);
-    const { data: room, error } = await createRoom(name, description, maxParticipants);
-    
-    if (!error && room) {
-      setOpen(false);
-      setName('');
-      setDescription('');
-      setMaxParticipants(50);
-      navigate(`/room/${room.room_code}`);
+    try {
+      const { data: room, error } = await createRoom(name, description, maxParticipants);
+      
+      if (!error && room) {
+        setOpen(false);
+        setName('');
+        setDescription('');
+        setMaxParticipants(50);
+        // Navigate to the room page
+        navigate(`/room/${room.room_code}`);
+      } else if (error) {
+        console.error('Room creation error:', error);
+      }
+    } catch (err) {
+      console.error('Unexpected error creating room:', err);
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);
   };
 
   return (
