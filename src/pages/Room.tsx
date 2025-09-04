@@ -207,6 +207,7 @@ const Room = () => {
     
     // Mark as programmatic change
     (window as any).lastProgrammaticChange = Date.now();
+    (window as any).lastSyncTime = Date.now();
     
     console.log('Syncing to room state:', { 
       isPlaying: newRoom.is_playing, 
@@ -218,26 +219,28 @@ const Room = () => {
     const currentTime = Math.floor(player.getCurrentTime());
     const timeDiff = Math.abs(currentTime - newRoom.current_video_time);
     
-    // Always sync to exact position for better accuracy
-    if (timeDiff > 2) {
+    // Always sync time if difference exists
+    if (timeDiff > 0.5) {
       console.log('Seeking to:', newRoom.current_video_time);
       player.seekTo(newRoom.current_video_time, true);
     }
     
-    // Sync play/pause state with more precise checks
-    const currentState = player.getPlayerState();
-    if (newRoom.is_playing && currentState !== window.YT.PlayerState.PLAYING) {
-      console.log('Starting video playback');
-      player.playVideo();
-    } else if (!newRoom.is_playing && currentState === window.YT.PlayerState.PLAYING) {
-      console.log('Pausing video playback');
-      player.pauseVideo();
-    }
+    // Sync play/pause state immediately - this is the critical fix
+    setTimeout(() => {
+      const currentState = player.getPlayerState();
+      if (newRoom.is_playing && currentState !== window.YT.PlayerState.PLAYING) {
+        console.log('Starting video playback after sync delay');
+        player.playVideo();
+      } else if (!newRoom.is_playing && currentState === window.YT.PlayerState.PLAYING) {
+        console.log('Pausing video playback after sync delay');  
+        player.pauseVideo();
+      }
+    }, 100);
     
+    // Clear sync state after a shorter delay
     setTimeout(() => {
       setIsSyncing(false);
-      (window as any).lastProgrammaticChange = Date.now();
-    }, 2000);
+    }, 1000);
   }, [player, isSyncing]);
 
   const handlePlayPause = async () => {
