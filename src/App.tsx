@@ -7,6 +7,7 @@ import { AuthProvider } from "@/hooks/useAuth";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Room from "./pages/Room";
+import AnonymousChat from "./pages/AnonymousChat";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -22,6 +23,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/room/:roomCode" element={<Room />} />
+            <Route path="/anonymous-chat" element={<AnonymousChat />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

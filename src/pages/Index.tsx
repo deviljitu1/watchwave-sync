@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useAuth } from '@/hooks/useAuth';
 import { CreateRoomDialog } from '@/components/rooms/CreateRoomDialog';
 import { JoinRoomDialog } from '@/components/rooms/JoinRoomDialog';
-import { Video, Plus, LogIn, LogOut, User } from 'lucide-react';
+import { Video, Plus, LogIn, LogOut, User, MessageCircle } from 'lucide-react';
 
 const Index = () => {
   const { user, loading, signOut } = useAuth();
@@ -68,7 +68,7 @@ const Index = () => {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-6 max-w-2xl mx-auto">
+          <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
             <Card className="hover:shadow-lg transition-shadow">
               <CardHeader className="text-center">
                 <CardTitle className="flex items-center justify-center space-x-2">
@@ -96,6 +96,27 @@ const Index = () => {
               </CardHeader>
               <CardContent>
                 <JoinRoomDialog />
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader className="text-center">
+                <CardTitle className="flex items-center justify-center space-x-2">
+                  <MessageCircle className="h-5 w-5" />
+                  <span>Anonymous Chat</span>
+                </CardTitle>
+                <CardDescription>
+                  Join anonymous chat rooms without signing up
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button 
+                  className="w-full" 
+                  onClick={() => navigate('/anonymous-chat')}
+                  variant="outline"
+                >
+                  Start Chatting
+                </Button>
               </CardContent>
             </Card>
           </div>
